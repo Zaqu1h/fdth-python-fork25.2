@@ -1,4 +1,4 @@
-from typing import Literal, Optional, Any
+from typing import Literal, Optional, Any, Union
 
 import pandas as pd
 import numpy as np
@@ -8,62 +8,66 @@ from .numerical_fdt import NumericalFDT
 from .categorical_fdt import CategoricalFDT
 from .multiple_fdt import MultipleFDT
 
-
 def fdt(
-    data: Optional[pd.Series | list | pd.DataFrame | np.ndarray] = None,
+    data: Optional[Union[pd.Series, list, pd.DataFrame, np.ndarray, dict]] = None,
     *,
-    freqs: Optional[pd.Series | list | dict[Any, int]] = None,
+    freqs: Optional[Union[pd.Series, list, dict]] = None,
     kind: Literal["numerical", "categorical", None] = None,
+    use_raw_data_stats: bool = False,
+    by: Optional[str] = None,
     **kwargs,
-) -> NumericalFDT | CategoricalFDT | MultipleFDT:
+) -> Union[NumericalFDT, CategoricalFDT, MultipleFDT]:
+    
     """
-    Create a frequency distribution table for a given data set or frequency set, automatically detecting whether it is supposed to refer to a numerical one, a categorical one or a combination 2 or more of them.
-
-    Trailing parameters are forwarded to the constructors of `fdth.numerical_fdt.NumericalFDT`, `fdth.categorical_fdt.CategoricalFDT` and `fdth.multiple_fdt.MultipleFDT`.
-
-    :param data: the input data set, or collection of data sets (with pandas.DataFrame or numpy.ndarray)
-    :param freqs: frequencies, as an alternative to inputting the data itself. If it is a series, it will be interpreted as numerical, and if it is a dictionary, it will be interpreted as categorical.
+    Create frequency distribution table(s).
+    
+    Automatically detects type and handles multiple columns.
     """
-
-    data_: pd.Series
-
-    if isinstance(data, list):
+    
+    if by is not None:
+        if not isinstance(data, pd.DataFrame):
+            raise ValueError("Parameter 'by' can only be used with DataFrame input")
+        
+        kwargs['use_raw_data_stats'] = use_raw_data_stats
+        return MultipleFDT(data, by=by, **kwargs)
+    
+    if isinstance(data, (pd.DataFrame, np.ndarray)):
+        if isinstance(data, np.ndarray) and data.ndim == 1:
+            data = pd.Series(data)
+        else:
+            kwargs['use_raw_data_stats'] = use_raw_data_stats
+            return MultipleFDT(data, **kwargs)
+    
+    if isinstance(data, dict):
+        df = pd.DataFrame(data)
+        kwargs['use_raw_data_stats'] = use_raw_data_stats
+        return MultipleFDT(df, **kwargs)
+    
+    if isinstance(data, (list, pd.Series)):
         data_ = pd.Series(data)
-    elif isinstance(data, pd.Series):
-        data_ = data
     elif isinstance(data, np.ndarray):
         if data.ndim == 1:
             data_ = pd.Series(data)
         else:
-            return MultipleFDT(data, **kwargs)
-    elif isinstance(data, pd.DataFrame):
-        return MultipleFDT(data, **kwargs)
+            data_ = pd.Series(data[:, 0])
     elif data is None and freqs is not None:
-        if isinstance(freqs, pd.Series | list):
+        if isinstance(freqs, (pd.Series, list)):
             if kind is not None and kind != "numerical":
-                raise TypeError(
-                    "`freqs` (as pandas.Series | list) can only be used with `numerical` type FDTs"
-                )
-            return NumericalFDT(freqs=freqs, **kwargs)
+                raise TypeError("`freqs` (as pandas.Series | list) can only be used with numerical FDTs")
+            return NumericalFDT(freqs=freqs, use_raw_data_stats=False, **kwargs)
         elif isinstance(freqs, dict):
             if kind is not None and kind != "categorical":
-                raise TypeError(
-                    "`freqs` (as dict) can only be used with `categorical` type FDTs"
-                )
+                raise TypeError("`freqs` (as dict) can only be used with categorical FDTs")
             return CategoricalFDT(freqs=freqs, **kwargs)
         else:
-            raise TypeError(
-                "`freqs` must be pandas.Series | list | dict when specified"
-            )
+            raise TypeError("`freqs` must be pandas.Series | list | dict when specified")
     else:
-        raise TypeError(
-            "`data` must be list | pandas.Series | pandas.DataFrame | numpy.ndarray, or `freqs` must be specified"
-        )
-
+        raise TypeError("`data` must be list | pandas.Series | pandas.DataFrame | numpy.ndarray | dict")
+    
     kind = kind or deduce_fdt_kind(data_)
     if kind == "categorical":
         return CategoricalFDT(data_, **kwargs)
     elif kind == "numerical":
-        return NumericalFDT(data_, **kwargs)
+        return NumericalFDT(data_, use_raw_data_stats=use_raw_data_stats, **kwargs)
     else:
-        raise TypeError(f"unexpected kind: {repr(kind)}")
+        raise TypeError(f"Unexpected kind: {repr(kind)}")
