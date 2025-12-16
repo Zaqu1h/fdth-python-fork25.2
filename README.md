@@ -6,31 +6,6 @@ A python port of the [fdth](https://github.com/jcfaria/fdth) R library.
 
 Examples can be found at the `examples/python` folder.
 
-## (portuguese) o que falta a fazer
-
-Este pacote foi desenvolvido como projeto para a disciplina
-"Probabilidade e Estatística" (Ciência da Computação, UESC), no semestre
-2025.1.
-
-O projeto já está quase pronto, mas tem alguns problemas que ainda
-precisam ser consertados. Caso seja desejado, alguém pode pegar isso
-como projeto de novo - aqui um sumário:
-
-- a representação visual dos plots numéricos não está perfeita;
-
-- o funcionamento da classe MultipleFDT não está correspondente ao R
-(foi erro da gente ao transcrever o código antigo - usar o [código do
-semestre anterior](https://github.com/yuriccosta/fdth-python) pode
-ajudar a entender direito como deveria ser);
-
-  - em especial, levar em conta o argumento `by` que não foi levado em
-  conta;
-
-- passar resto da documentação (e comentários) para inglês;
-
-- houve uma regressão em `Binning.from_sturges`, e o resultado difere do
-original;
-
 ## development
 
 First of all, clone the repository (para um tutorial em português
@@ -98,5 +73,8 @@ Ferreira](https://github.com/lgferreiracic), [Yuri Coutinho
 Costa](https://github.com/yuriccosta), and [Maria
 Clara](https://github.com/MaryClaraSimoes).
 
-Current version made by Gabriel Galdino, Luciene Mª Torquato C. Batista,
+Prevous version made by Gabriel Galdino, Luciene Mª Torquato C. Batista,
 Stella Ribas, Thainá Guimarães and Yohanan Santana.
+
+Current version made by Alex Amaral dos Santos, Isaque Silva Passos Ribeiro,
+Kaiala de Jesus Santos e Olinoedson Silva Sena.
