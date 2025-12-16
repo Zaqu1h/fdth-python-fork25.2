@@ -73,7 +73,7 @@ Ferreira](https://github.com/lgferreiracic), [Yuri Coutinho
 Costa](https://github.com/yuriccosta), and [Maria
 Clara](https://github.com/MaryClaraSimoes).
 
-Prevous version made by Gabriel Galdino, Luciene Mª Torquato C. Batista,
+Previous version made by Gabriel Galdino, Luciene Mª Torquato C. Batista,
 Stella Ribas, Thainá Guimarães and Yohanan Santana.
 
 Current version made by Alex Amaral dos Santos, Isaque Silva Passos Ribeiro,
