@@ -2,7 +2,7 @@ from typing import Optional, Any, Union
 
 import pandas as pd
 import numpy as np
-import matplotlib as plt
+import matplotlib.pyplot as plt
 
 from .utils import deduce_fdt_kind
 from .numerical_fdt import NumericalFDT
