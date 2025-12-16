@@ -5,72 +5,115 @@ from dataclasses import dataclass
 
 import pandas as pd
 import numpy as np
-from numpy.typing import NDArray
 
-
-@dataclass(frozen=True)
 class Binning:
     """
-    Class for storing information about binning for numerical FDTs.
-
-    Usually the desired result is to have a set of values following `h = (start - end) / k`, such that there are `k` class intervals and the start of the i-th class interval is at `start + h * (i - 1)`.
+    Class for managing binning information for numerical frequency distributions.
+    
+    Attributes
+    ----------
+    start : float
+        Starting value of the first bin.
+    end : float
+        Ending value of the last bin.
+    h : float
+        Bin width (class interval size).
+    k : int
+        Number of bins.
+    bins : np.ndarray
+        Array of bin edges with length k+1.
     """
-
-    start: float
-    """The start of the bin."""
-
-    end: float
-    """The end of the bin."""
-
-    h: float
-    """The amplitude/width of each bin/class."""
-
-    k: int
-    """The total amount of bins/classes."""
-
-    bins: NDArray
-    """An array with the start of each bin. Usually generated automatically."""
-
+    
+    def __init__(self, start: float, end: float, h: float, k: int, bins: np.ndarray):
+        self.start = start
+        self.end = end
+        self.h = h
+        self.k = k
+        self.bins = bins
+    
     @staticmethod
     def auto(
         start: Optional[float] = None,
         end: Optional[float] = None,
         h: Optional[float] = None,
         k: Optional[int] = None,
-    ) -> Callable[[pd.Series], Binning]:
-        """Build an automatic binning based on the passed start, end, h and k values."""
-
-        all_none = lambda *x: all(xi is None for xi in x)
-        no_none = lambda *x: all(xi is not None for xi in x)
-
-        def inner(data, start, end, h, k) -> Binning:
-            if all_none(start, end, h, k):
-                raise ValueError("at least one of the arguments must be specified")
+    ) -> Callable[[pd.Series], 'Binning']:
+        """
+        Create an automatic binning function based on specified parameters.
+        
+        Parameters
+        ----------
+        start : float, optional
+            Starting value of the first bin.
+        end : float, optional
+            Ending value of the last bin.
+        h : float, optional
+            Bin width.
+        k : int, optional
+            Number of bins.
+        
+        Returns
+        -------
+        Callable[[pd.Series], 'Binning']
+            A function that takes data and returns a Binning object.
+        
+        Raises
+        ------
+        ValueError
+            If an invalid combination of parameters is provided.
+        """
+        
+        def inner(data, start, end, h, k) -> 'Binning':
+            all_none = all(x is None for x in [start, end, h, k])
+            no_none = all(x is not None for x in [start, end])
+            
+            if all_none:
+                return Binning.from_sturges(data)
             elif h is None and k is not None:
                 return Binning.linspace(data=data, k=k)
-            elif no_none(start, end) and all_none(h, k):
+            elif no_none and all(x is None for x in [h, k]):
                 r = end - start
-                k = int(np.sqrt(abs(r)))
+                k = int(np.ceil(np.sqrt(abs(r))))
                 return Binning.linspace(k=max(k, 5), start=start, end=end)
-            elif no_none(start, end, h) and k is None:
-                # XXX: forcing h to potentially be a different value, as in to
-                # maintain consistency, but if it is correct it won't be
-                # changed
-                k = np.ceil((end - start) / h)
+            elif all(x is not None for x in [start, end, h]) and k is None:
+                k = int(np.ceil((end - start) / h))
                 return Binning.linspace(k=k, start=start, end=end)
             else:
-                raise ValueError("`h` and `k` must not be both specified")
-
+                raise ValueError("Invalid combination of parameters")
+        
         return lambda data: inner(data, start, end, h, k)
-
+    
     @staticmethod
     def linspace(
         k: int,
         data: Optional[pd.Series] = None,
         start: Optional[float] = None,
         end: Optional[float] = None,
-    ) -> Binning:
-        """Linear binning, dividing the entire range into `k` equal spaces."""
+    ) -> 'Binning':
+        """
+        Create linear binning with equal-width bins.
+        
+        Parameters
+        ----------
+        k : int
+            Number of bins.
+        data : pd.Series, optional
+            Data for determining range if start/end not specified.
+        start : float, optional
+            Starting value of the first bin.
+        end : float, optional
+            Ending value of the last bin.
+        
+        Returns
+        -------
+        Binning
+            A Binning object with linearly spaced bins.
+        
+        Raises
+        ------
+        ValueError
+            If data is None when start or end is not specified.
+        """
         if start is None:
             if data is None:
                 raise ValueError("`data` is None when `start` was not specified")
@@ -79,42 +122,107 @@ class Binning:
             if data is None:
                 raise ValueError("`data` is None when `end` was not specified")
             end = data.max() + abs(data.max()) / 100
+        
         h = (end - start) / k
-        bins = np.arange(start, end + h, h)
+        bins = np.linspace(start, end, k + 1)
         return Binning(k=k, start=start, end=end, h=h, bins=bins)
-
+    
     @staticmethod
-    def from_sturges(data: pd.Series) -> Binning:
-        """Sturges method for calculating the binning."""
-        # FIXME: doesn't seem to be accurate anymore? do more testing here.
+    def from_sturges(data: pd.Series) -> 'Binning':
+        """
+        Create binning using Sturges' rule.
+        
+        Parameters
+        ----------
+        data : pd.Series
+            The data to bin.
+        
+        Returns
+        -------
+        Binning
+            A Binning object with k = ceil(1 + log2(n)) bins.
+        """
         n = len(data)
-        k = int(np.ceil(1 + 3.322 * np.log10(n)))
+        if n == 0:
+            return Binning.linspace(data=data, k=1)
+        elif n == 1:
+            return Binning.linspace(data=data, k=1)
+        k = int(np.ceil(1 + np.log2(n)))
         return Binning.linspace(data=data, k=k)
-
+    
     @staticmethod
-    def from_scott(data: pd.Series) -> Binning:
-        """Scott method for calculating the binning."""
+    def from_scott(data: pd.Series) -> 'Binning':
+        """
+        Create binning using Scott's normal reference rule.
+        
+        Parameters
+        ----------
+        data : pd.Series
+            The data to bin.
+        
+        Returns
+        -------
+        Binning
+            A Binning object with bins sized for optimal normal distribution display.
+        """
         n = len(data)
+        if n == 0:
+            return Binning.linspace(data=data, k=1)
         sd = np.std(data)
         at = data.max() - data.min()
+        if sd == 0 or n == 1:
+            return Binning.linspace(data=data, k=1)
         k = int(np.ceil(at / (3.5 * sd / (n ** (1 / 3)))))
-        return Binning.linspace(data=data, k=k)
-
+        return Binning.linspace(data=data, k=max(k, 1))
+    
     @staticmethod
-    def from_fd(data: pd.Series) -> Binning:
-        """Freedman-Diaconis method for calculating the binning."""
+    def from_fd(data: pd.Series) -> 'Binning':
+        """
+        Create binning using Freedman-Diaconis rule.
+        
+        Parameters
+        ----------
+        data : pd.Series
+            The data to bin.
+        
+        Returns
+        -------
+        Binning
+            A Binning object with bins based on IQR.
+        """
         n = len(data)
+        if n == 0:
+            return Binning.linspace(data=data, k=1)
+        elif n == 1:
+            return Binning.linspace(data=data, k=1)
         iqr = np.percentile(data, 75) - np.percentile(data, 25)
+        if iqr == 0:
+            return Binning.from_scott(data)
         k = int(np.ceil((data.max() - data.min()) / (2 * iqr / (n ** (1 / 3)))))
-        return Binning.linspace(data=data, k=k)
-
+        return Binning.linspace(data=data, k=max(k, 1))
+    
     def format_classes(self, round_: int, right: bool) -> list[str]:
+        """
+        Format class intervals for display.
+        
+        Parameters
+        ----------
+        round_ : int
+            Number of decimal places for rounding.
+        right : bool
+            Whether intervals are right-closed (True) or left-closed (False).
+        
+        Returns
+        -------
+        list[str]
+            Formatted class interval strings.
+        """
         delims = ("(", "]") if right else ("[", ")")
         bins = self.bins
-
+        
         def fmt(a, b) -> str:
             ra = str(round(a, round_))
             rb = str(round(b, round_))
-            return "{}{}, {}{}".format(delims[0], ra, rb, delims[1])
-
+            return f"{delims[0]}{ra}, {rb}{delims[1]}"
+        
         return [fmt(a, b) for (a, b) in zip(bins[:-1], bins[1:])]
