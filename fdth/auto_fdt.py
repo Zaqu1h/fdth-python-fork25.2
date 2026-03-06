@@ -14,14 +14,31 @@ def fdt(
     freqs: Optional[Union[pd.Series, list, dict]] = None,
     kind: Literal["numerical", "categorical", None] = None,
     use_raw_data_stats: bool = False,
-    by: Optional[str] = None,
+    by: Optional[Union[str, list[str]]] = None,
     **kwargs,
 ) -> Union[NumericalFDT, CategoricalFDT, MultipleFDT]:
-    
     """
     Create frequency distribution table(s).
     
-    Automatically detects type and handles multiple columns.
+    Parameters
+    ----------
+    data : array-like, optional
+        Input data.
+    freqs : array-like or dict, optional
+        Pre-calculated frequencies.
+    kind : {"numerical", "categorical"}, optional
+        Force data type.
+    use_raw_data_stats : bool, default=False
+        Use raw data for statistics.
+    by : str or list of str, optional
+        Column(s) to group by.
+    **kwargs
+        Additional arguments passed to FDT classes.
+    
+    Returns
+    -------
+    NumericalFDT, CategoricalFDT, or MultipleFDT
+        Frequency distribution table(s).
     """
     
     if by is not None:
@@ -30,7 +47,7 @@ def fdt(
         
         kwargs['use_raw_data_stats'] = use_raw_data_stats
         return MultipleFDT(data, by=by, **kwargs)
-    
+
     if isinstance(data, (pd.DataFrame, np.ndarray)):
         if isinstance(data, np.ndarray) and data.ndim == 1:
             data = pd.Series(data)
