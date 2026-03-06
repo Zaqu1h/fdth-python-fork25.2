@@ -24,7 +24,7 @@ class MultipleFDT:
         Column names from the input data.
     """
     
-    def __init__(self, data: pd.DataFrame | np.ndarray, by: Optional[str] = None, **kwargs) -> None:
+    def __init__(self, data: pd.DataFrame | np.ndarray, by: Optional[Union[str, list[str]]] = None, **kwargs) -> None:
         if isinstance(data, np.ndarray):
             if data.ndim == 1:
                 data = pd.DataFrame({'V1': data})
@@ -43,7 +43,14 @@ class MultipleFDT:
             self._create_fdts()
             self._groups = None
         else:
-            self._columns = [col for col in data.columns if col != by]
+            # Converter para lista se for string única
+            if isinstance(by, str):
+                by_cols = [by]
+            else:
+                by_cols = by
+            
+            self._by_cols = by_cols
+            self._columns = [col for col in data.columns if col not in by_cols]
             self._create_grouped_fdts()
     
     def _create_fdts(self) -> None:
@@ -60,19 +67,31 @@ class MultipleFDT:
                 self.fdts[col_name] = NumericalFDT(col_data, **num_kwargs)
     
     def _create_grouped_fdts(self):
-        if self._by not in self._data.columns:
-            raise ValueError(f"Grouping column '{self._by}' not found in DataFrame")
+        # Verificar se todas as colunas de agrupamento existem
+        for col in self._by_cols:
+            if col not in self._data.columns:
+                raise ValueError(f"Grouping column '{col}' not found in DataFrame")
+            
+            if deduce_fdt_kind(self._data[col]) != "categorical":
+                raise ValueError(f"Grouping column '{col}' must be categorical")
         
-        if deduce_fdt_kind(self._data[self._by]) != "categorical":
-            raise ValueError(f"Grouping column '{self._by}' must be categorical")
+        # Criar chave composta para agrupamento
+        group_cols = [self._data[col] for col in self._by_cols]
+        if len(group_cols) == 1:
+            group_series = group_cols[0]
+        else:
+            # Combinar múltiplas colunas em uma única chave
+            group_series = pd.Series(
+                [tuple(row) for row in zip(*group_cols)],
+                index=self._data.index
+            )
         
-        group_col = self._data[self._by]
-        data_to_analyze = self._data.drop(columns=[self._by])
-        unique_groups = group_col.unique()
+        data_to_analyze = self._data.drop(columns=self._by_cols)
+        unique_groups = group_series.unique()
         
         self._groups = {}
         for group in unique_groups:
-            group_data = data_to_analyze[group_col == group]
+            group_data = data_to_analyze[group_series == group]
             group_fdts = {}
             
             for col_name, col_data in group_data.items():
@@ -85,7 +104,13 @@ class MultipleFDT:
                         num_kwargs['use_raw_data_stats'] = False
                     group_fdts[col_name] = NumericalFDT(col_data, **num_kwargs)
             
-            self._groups[group] = group_fdts
+            # Converter grupo para string se for tupla
+            if isinstance(group, tuple):
+                group_key = ', '.join(str(g) for g in group)
+            else:
+                group_key = group
+                
+            self._groups[group_key] = group_fdts
         
         self.fdts = {}
     
@@ -105,35 +130,69 @@ class MultipleFDT:
         for param in numerical_params:
             filtered.pop(param, None)
         return filtered
-    
-    def get_group(self, group):
-        return self._groups.get(group) if self._by is not None else None
-    
+        
+    def get_group(self, group: Union[str, tuple]):
+        """
+        Get all FDT objects for a specific group.
+        
+        Parameters
+        ----------
+        group : str or tuple
+            Group name or tuple of group values.
+        
+        Returns
+        -------
+        dict
+            Dictionary mapping variable names to FDT objects.
+        """
+        if self._by is None:
+            return None
+        
+        # Converter para string se for tupla
+        if isinstance(group, tuple):
+            group_key = '_'.join(str(g) for g in group)
+        else:
+            group_key = group
+        
+        return self._groups.get(group_key)
+
     def get_groups(self):
+        """Return list of all group keys."""
         return list(self._groups.keys()) if self._by is not None else []
     
-    def print_group(self, group: str):
+    def print_group(self, group: Union[str, tuple]):
         """
         Print all FDTs for a specific group in formatted way.
         
         Parameters
         ----------
-        group : str
-            Group name to print.
+        group : str or tuple
+            Group name or tuple of group values.
         """
         if self._by is None:
             print("No groups available (not using 'by' parameter)")
             return
         
-        if group not in self._groups:
-            print(f"Group '{group}' not found")
+        if isinstance(group, tuple):
+            group_key = '_'.join(str(g) for g in group)
+        else:
+            group_key = group
+        
+        if group_key not in self._groups:
+            print(f"Group '{group_key}' not found")
             return
         
+        # Mostrar os valores originais do grupo se for tupla
+        if isinstance(group, tuple):
+            group_display = ' x '.join(str(g) for g in group)
+        else:
+            group_display = group
+        
         print(f"\n{'='*60}")
-        print(f"GROUP: {group}")
+        print(f"GROUP: {group_display}")
         print('='*60)
         
-        grupo_fdts = self._groups[group]
+        grupo_fdts = self._groups[group_key]
         for var_name, fdt_obj in grupo_fdts.items():
             print(f"\n{var_name}")
             print("-" * 40)
@@ -143,13 +202,25 @@ class MultipleFDT:
     def __getitem__(self, key):
         if self._by is not None:
             if isinstance(key, tuple):
-                group, column = key
-                return self._groups[group][column]
+                if len(key) == 2:
+                    # (grupo, coluna)
+                    group, column = key
+                    if isinstance(group, tuple):
+                        group_key = '_'.join(str(g) for g in group)
+                    else:
+                        group_key = group
+                    return self._groups[group_key][column]
+                else:
+                    # Múltiplas dimensões de grupo
+                    group_vals = key[:-1]
+                    column = key[-1]
+                    group_key = '_'.join(str(g) for g in group_vals)
+                    return self._groups[group_key][column]
             elif key in self._columns:
                 result = {}
-                for group, group_fdts in self._groups.items():
+                for group_key, group_fdts in self._groups.items():
                     if key in group_fdts:
-                        result[group] = group_fdts[key]
+                        result[group_key] = group_fdts[key]
                 return result
             else:
                 raise KeyError(f"Key '{key}' not found")
@@ -159,8 +230,18 @@ class MultipleFDT:
     def __contains__(self, key):
         if self._by is not None:
             if isinstance(key, tuple):
-                group, column = key
-                return group in self._groups and column in self._groups[group]
+                if len(key) == 2:
+                    group, column = key
+                    if isinstance(group, tuple):
+                        group_key = '_'.join(str(g) for g in group)
+                    else:
+                        group_key = group
+                    return group_key in self._groups and column in self._groups[group_key]
+                else:
+                    group_vals = key[:-1]
+                    column = key[-1]
+                    group_key = '_'.join(str(g) for g in group_vals)
+                    return group_key in self._groups and column in self._groups[group_key]
             else:
                 return any(key in group_fdts for group_fdts in self._groups.values())
         else:
@@ -587,9 +668,19 @@ class MultipleFDT:
         if self._by is not None:
             result = ""
             
-            for group, group_fdts in self._groups.items():
+            for group_key, group_fdts in self._groups.items():
+                # Tentar mostrar grupo de forma legível
+                if '_' in group_key and len(self._by_cols) > 1:
+                    group_vals = group_key.split('_')
+                    if len(group_vals) == len(self._by_cols):
+                        group_display = ' x '.join(group_vals)
+                    else:
+                        group_display = group_key
+                else:
+                    group_display = group_key
+                
                 result += f"\n{'='*50}\n"
-                result += f"{group}\n"
+                result += f"{group_display}\n"
                 result += f"{'='*50}\n"
                 
                 for col_name, fdt in group_fdts.items():
